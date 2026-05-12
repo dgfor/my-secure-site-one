@@ -1,0 +1,14 @@
+# Файлы конфигурации с паролями
+db.php
+
+# Настройки VS Code
+.vscode/
+
+# Временные файлы XAMPP и логи
+*.log
+error_log
+.htaccess
+
+# ОС файлы
+Thumbs.db
+.DS_Store
