@@ -25,6 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_user'])) {
                 if ($user['is_approved'] == 1) {
                     $_SESSION['authorized'] = true;
                     $_SESSION['username'] = $user['username'];
+                    $_SESSION['is_admin'] = $user['is_admin']; // Запоминаем роль админа в сессии
                 } else {
                     $error = "Ваша заявка еще на рассмотрении у администратора.";
                 }
@@ -65,8 +66,8 @@ if (isset($_GET['logout'])) {
         .link { margin-top: 15px; display: block; color: #aaa; text-decoration: none; font-size: 14px; }
         .link:hover { color: #fff; }
         
-        /* Стили для контента (вставляемой таблицы) после авторизации */
-        .secure-content { background: #1e1e1e; padding: 30px; border-radius: 15px; box-shadow: 0 5px 20px rgba(0,0,0,0.5); text-align: left; width: auto; max-width: 90%; }
+        /* Стили для контента после авторизации */
+        .secure-content { background: #1e1e1e; padding: 30px; border-radius: 15px; box-shadow: 0 5px 20px rgba(0,0,0,0.5); text-align: left; width: auto; min-width: 400px; max-width: 90%; }
     </style>
 </head>
 <body>
@@ -93,8 +94,16 @@ if (isset($_GET['logout'])) {
     <div class="secure-content">
         <h2>Добро пожаловать, <?php echo htmlspecialchars($_SESSION['username']); ?>!</h2>
         
+        <!-- БЛОК АДМИНИСТРАТОРА -->
+        <?php if (isset($_SESSION['is_admin']) && $_SESSION['is_admin'] == 1): ?>
+            <div style="background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+                <span style="color: #ffc107; font-weight: bold;">Вы вошли как Администратор.</span> 
+                <a href="admin.php" style="color: #fff; margin-left: 15px; font-weight: bold;">Открыть панель управления →</a>
+            </div>
+        <?php endif; ?>
+
         <!-- ======================================================= -->
-        <!-- ВЕРСТКА (ТАБЛИЦУ С ОТОБРАЖЕНИЕМ СТАТУСОВ) СЮДА -->
+        <!-- ВСТАВЛЯЙТЕ ВАШУ ВЕРСТКУ (ТАБЛИЦУ С ОТОБРАЖЕНИЕМ СТАТУСОВ) СЮДА -->
         <p>Здесь будет отображаться интерактивная таблица Excel.</p>
         <!-- ======================================================= -->
 
