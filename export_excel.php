@@ -33,7 +33,7 @@ $raw_data = $stmt_hours->fetchAll();
 echo '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://w3.org">';
 echo '<head><meta http-serif="Content-Type" content="text/html; charset=utf-8" /><style>td { font-family: Arial; font-size: 11pt; border: 0.5pt solid #000; } th { font-family: Arial; font-size: 11pt; font-weight: bold; background-color: #dcdcdc; border: 0.5pt solid #000; }</style></head>';
 echo '<body>';
-echo '<h3>Сводный табель заработка за период ' . $month_title . '</h3>';
+echo '<h3>Сводный табель за период ' . $month_title . '</h3>';
 echo '<table>';
 echo '<thead>';
 echo '<tr>';
