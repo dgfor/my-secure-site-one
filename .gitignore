@@ -9,6 +9,9 @@ db.php
 error_log
 .htaccess
 
+# Игнорируем все фаилы txt
+*.txt
+
 # ОС файлы
 Thumbs.db
 .DS_Store
