@@ -94,7 +94,10 @@ if (isset($_GET['logout'])) {
     <div class="secure-content">
         <h2>Добро пожаловать, <?php echo htmlspecialchars($_SESSION['username']); ?>!</h2>
         
-        <!-- БЛОК АДМИНИСТРАТОРА -->
+		  <!-- Ссылка на смену пароля -->
+<a href="change_password.php" style="color: #007bff; text-decoration: none; font-weight: bold; margin-right: 15px;">Сменить пароль</a>
+        
+<!-- БЛОК АДМИНИСТРАТОРА -->
         <?php if (isset($_SESSION['is_admin']) && $_SESSION['is_admin'] == 1): ?>
             <div style="background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
                 <span style="color: #ffc107; font-weight: bold;">Вы вошли как Администратор.</span> 
