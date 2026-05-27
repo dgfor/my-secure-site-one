@@ -5,13 +5,13 @@ require_once 'db.php';
 $error = '';
 $success_msg = '';
 
-// 1. ЛОГИКА АВТОРИЗАЦИИ
+// 1. ЛОГИКА АВТОРИЗАЦИИ (Вход из таблицы testLogin)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_user'])) {
     $username = trim($_POST['username']);
     $password = $_POST['password'];
 
     if (!empty($username) && !empty($password)) {
-        $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
+		  $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
         $stmt->execute([$username]);
         $user = $stmt->fetch();
 
@@ -20,13 +20,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_user'])) {
                 $_SESSION['authorized'] = true;
                 $_SESSION['username'] = $user['username'];
                 $_SESSION['is_admin'] = $user['is_admin'];
+                
+                // Сохраняем права на объекты и подтаблицы
+                $_SESSION['allowed_object'] = !empty($user['allowed_object']) ? $user['allowed_object'] : '1';
+                $_SESSION['allowed_sub_table'] = !empty($user['allowed_sub_table']) ? $user['allowed_sub_table'] : '1';
+                
+                header("Location: index.php");
+                exit;
             } else { $error = "Ваша заявка еще на рассмотрении."; }
         } else { $error = "Неверный логин или пароль."; }
     } else { $error = "Заполните все поля."; }
 }
 
-// 2. ЛОГИКА ДОБАВЛЕНИЯ СМЕНЫ
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_shift'])) {
+// ЛОГИКА ВЫХОДА
+if (isset($_GET['logout'])) {
+    session_destroy();
+    header("Location: index.php");
+    exit;
+}
+
+// 2. БЕЗОПАСНОЕ ОПРЕДЕЛЕНИЕ ТЕКУЩЕГО ОБЪЕКТА И ТАБЛИЦЫ
+$currentObject = '1';
+$currentSubTable = '1';
+
+if (isset($_SESSION['authorized'])) {
+    if ($_SESSION['is_admin'] == 2) {
+        // Супер-администратор переключает кликами
+        $currentObject = isset($_GET['object']) ? $_GET['object'] : '1';
+        if (!in_array($currentObject, ['1', '2', '3', '4'])) { $currentObject = '1'; }
+
+        $currentSubTable = isset($_GET['table']) ? $_GET['table'] : '1';
+        if (!in_array($currentSubTable, ['1', '2'])) { $currentSubTable = '1'; }
+    } else {
+        // Обычный админ привязан к своим значениям из БД
+        $currentObject = isset($_SESSION['allowed_object']) ? $_SESSION['allowed_object'] : '1';
+        $currentSubTable = isset($_SESSION['allowed_sub_table']) ? $_SESSION['allowed_sub_table'] : '1';
+    }
+}
+
+// Имя таблицы в базе данных: work_log_1_1, work_log_3_2 и т.д.
+$db_table = "work_log_" . $currentObject . "_" . $currentSubTable;
+
+
+// 3. ЛОГИКА ДОБАВЛЕНИЯ СМЕНЫ
+if (isset($_SESSION['authorized']) && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_shift'])) {
     $emp_id = trim($_POST['employee_id']);
     $emp_name = trim($_POST['employee_name']);
     $rate = floatval($_POST['hourly_rate']);
@@ -42,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_shift'])) {
         $end_str = date('Y-m-d H:i:s', $end_timestamp);
 
         try {
-            $stmt = $pdo->prepare("INSERT INTO work_log (employee_id, employee_name, shift_start, shift_end, hours_worked, hourly_rate) 
+            $stmt = $pdo->prepare("INSERT INTO {$db_table} (employee_id, employee_name, shift_start, shift_end, hours_worked, hourly_rate) 
                                    VALUES (?, ?, ?, ?, ?, ?) 
                                    ON DUPLICATE KEY UPDATE 
                                    shift_start = VALUES(shift_start),
@@ -50,38 +87,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_shift'])) {
                                    hours_worked = VALUES(hours_worked),
                                    hourly_rate = VALUES(hourly_rate)");
             $stmt->execute([$emp_id, $emp_name, $start_str, $end_str, $hours_coef, $rate]);
-            $success_msg = "Данные успешно сохранены в табеле!";
+            $success_msg = "Данные успешно сохранены в объекте №{$currentObject} (Таблица №{$currentSubTable})!";
         } catch (Exception $e) {
             $error = "Ошибка записи: " . $e->getMessage();
         }
     } else { $error = "Заполните все поля формы корректно."; }
 }
 
-// 3. ОПРЕДЕЛЕНИЕ ТЕКУЩЕГО ФИЛЬТРА МЕСЯЦА
-// По умолчанию ставим текущий месяц и год
+// 4. ОПРЕДЕЛЕНИЕ ТЕКУЩЕГО ФИЛЬТРА МЕСЯЦА
 $selected_month = isset($_GET['month']) ? $_GET['month'] : date('Y-m');
 
-// Получаем список всех месяцев, за которые есть записи в базе (для выпадающего списка)
+// 5. СБОР ДАННЫХ ДЛЯ ТАБЛИЦЫ
 $months_list = [];
-if (isset($_SESSION['authorized'])) {
-    $stmt_months = $pdo->query("SELECT DISTINCT DATE_FORMAT(shift_start, '%Y-%m') as m_date FROM work_log ORDER BY m_date DESC");
-    $months_list = $stmt_months->fetchAll(PDO::FETCH_COLUMN);
-    
-    // Если база пустая, добавим хотя бы текущий месяц в список
-    if (empty($months_list)) {
-        $months_list[] = date('Y-m');
-    }
-}
-
-// 4. СБОР ДАННЫХ ДЛЯ СВОДНОЙ ТАБЛИЦЫ С УЧЕТОМ ФИЛЬТРА
 $work_data = [];
 $rates_archive = [];
+
 if (isset($_SESSION['authorized'])) {
+    $stmt_months = $pdo->query("SELECT DISTINCT DATE_FORMAT(shift_start, '%Y-%m') as m_date FROM {$db_table} ORDER BY m_date DESC");
+    $months_list = $stmt_months->fetchAll(PDO::FETCH_COLUMN);
+    
+    if (empty($months_list)) { $months_list[] = date('Y-m'); }
+
     $stmt_hours = $pdo->prepare("SELECT employee_id, employee_name, MAX(hourly_rate) as current_rate,
                                GROUP_CONCAT(CONCAT(DATE_FORMAT(shift_start, '%d.%m.%Y'), '|', hours_worked) ORDER BY shift_start SEPARATOR ';') as raw_days,
                                SUM(hours_worked) as total_hours,
                                SUM(hours_worked * hourly_rate) as total_salary
-                               FROM work_log 
+                               FROM {$db_table} 
                                WHERE DATE_FORMAT(shift_start, '%Y-%m') = ?
                                GROUP BY employee_id");
     $stmt_hours->execute([$selected_month]);
@@ -112,18 +143,7 @@ if (isset($_SESSION['authorized'])) {
             'total_hours_text' => $total_h_all . "ч " . ($total_m_all > 0 ? $total_m_all . "м" : "00м"),
             'total_salary' => $row['total_salary']
         ];
-
-        $rates_archive[$row['employee_id']] = [
-            'name' => $row['employee_name'],
-            'rate' => $row['current_rate']
-        ];
     }
-}
-
-if (isset($_GET['logout'])) {
-    session_destroy();
-    header("Location: index.php");
-    exit;
 }
 ?>
 <!DOCTYPE html>
@@ -158,148 +178,166 @@ if (isset($_GET['logout'])) {
         .btn-excel:hover { background: #154c2e; }
 
         .work-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: #2a2a2a; }
-        .work-table th, .work-table td { padding: 12px; border: 1px solid #444; text-align: left; }
-        .work-table th { background: #333; color: #ffc107; }
-        .total-cell { font-weight: bold; color: #28a745; }
-        .money-cell { font-weight: bold; color: #20c997; }
+        .work-table th, .work-table td { border: 1px solid #444; padding: 12px; text-align: center; }
+        .work-table th { background: #333; color: #007bff; }
+        .work-table tr:nth-child(even) { background: #222; }
     </style>
 </head>
 <body>
 
 <?php if (!isset($_SESSION['authorized'])): ?>
-    <!-- ЭКРАН ВХОДА -->
+    <!-- ФОРМА ВХОДА ДЛЯ НЕАВТОРИЗОВАННЫХ -->
     <div class="box">
-        <h2>Войти в систему</h2>
-        <?php if (!empty($error)): ?><div class="error"><?php echo $error; ?></div><?php endif; ?>
-        <form method="POST">
-            <input type="text" name="username" placeholder="Ваш логин" required>
-            <input type="password" name="password" placeholder="Ваш пароль" required>
+        <h2 style="margin-top:0; margin-bottom:20px;">Вход в систему</h2>
+        <?php if(!empty($error)): ?>
+            <div class="error"><?php echo $error; ?></div>
+        <?php endif; ?>
+        <form method="POST" action="index.php">
+            <input type="text" name="username" placeholder="Логин" required>
+				<input type="password" name="password" placeholder="Пароль" required>
             <button type="submit" name="login_user">Войти</button>
         </form>
-        <a href="register.php" class="link">Подать заявку на доступ</a>
+		  <a href="register.php" class="link">Зарегистрироваться</a>
     </div>
 <?php else: ?>
-    <!-- ЗАЩИЩЕННЫЙ ИНТЕРФЕЙС -->
+    <!-- ПАНЕЛЬ УПРАВЛЕНИЯ ДЛЯ АВТОРИЗОВАННЫХ -->
     <div class="secure-content">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h2>Учет времени и заработной платы</h2>
+            <h2>Учет времени (Объект №<?php echo $currentObject; ?>, Таблица №<?php echo $currentSubTable; ?>)</h2>
             <a href="?logout=1" style="color: #ff4d4d; text-decoration: none; font-weight: bold;">Выйти</a>
         </div>
         
-         <!-- Изменено: форму и плашку видят все админы (уровень 1 и 2) -->
         <?php if (isset($_SESSION['is_admin']) && $_SESSION['is_admin'] >= 1): ?>
-           <div style="background: #2a2a2a; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107; display: flex; justify-content: space-between; align-items: center;">
-                <span style="color: #ffc107; font-weight: bold;">
-                    Вы вошли как <?php echo $_SESSION['is_admin'] == 2 ? 'Супер-администратор' : 'Администратор'; ?>.
-                </span> 
+           <div style="background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107; display: flex; flex-direction: column; gap: 15px;">
                 
-                <!-- Ссылка на панель пользователей открывается ТОЛЬКО для уровня 2 -->
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #ffc107; font-weight: bold;">
+                        Вы вошли как <?php echo $_SESSION['is_admin'] == 2 ? 'Супер-администратор' : 'Администратор'; ?>.
+                    </span> 
+                    <?php if ($_SESSION['is_admin'] == 2): ?>
+                        <a href="admin.php" style="color: #ffc107; font-weight: bold; text-decoration: none;">Панель пользователей →</a>
+                    <?php endif; ?>
+                </div>
+
+                <!-- ДВУХУРОВНЕВОЕ МЕНЮ ДЛЯ СУПЕР-АДМИНИСТРАТОРА -->
                 <?php if ($_SESSION['is_admin'] == 2): ?>
-                    <a href="admin.php" style="color: #ffc107; font-weight: bold; text-decoration: none;">Панель пользователей →</a>
-                <?php else: ?>
-                    <span style="color: #666; font-size: 13px;">Доступ к панели пользователей ограничен</span>
+                    <div style="border-top: 1px solid #444; padding-top: 12px; display: flex; flex-direction: column; gap: 10px;">
+                        
+                        <!-- 1 РЯД: Выбор объекта -->
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <span style="font-size: 13px; color: #aaa; width: 110px;">Выбор объекта:</span>
+                            <?php for($o = 1; $o <= 4; $o++): ?>
+                                <a href="index.php?object=<?php echo $o; ?>&table=<?php echo $currentSubTable; ?>&month=<?php echo $selected_month; ?>" 
+                                   style="padding: 5px 10px; border-radius: 4px; text-decoration: none; font-weight: bold; font-size: 12px;
+                                          background: <?php echo $currentObject == $o ? '#ffc107' : '#1e1e1e'; ?>; 
+                                          color: <?php echo $currentObject == $o ? '#121212' : '#ffc107'; ?>;
+                                          border: 1px solid #ffc107;">
+                                   Объект №<?php echo $o; ?>
+                                </a>
+                            <?php endfor; ?>
+                        </div>
+
+                        <!-- 2 РЯД: Выбор таблицы -->
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <span style="font-size: 13px; color: #aaa; width: 110px;">Таблицы объекта:</span>
+                            <?php for($t = 1; $t <= 2; $t++): ?>
+                                <a href="index.php?object=<?php echo $currentObject; ?>&table=<?php echo $t; ?>&month=<?php echo $selected_month; ?>" 
+                                   style="padding: 5px 10px; border-radius: 4px; text-decoration: none; font-weight: bold; font-size: 12px;
+                                          background: <?php echo $currentSubTable == $t ? '#007bff' : '#1e1e1e'; ?>; 
+                                          color: <?php echo $currentSubTable == $t ? 'white' : '#007bff'; ?>;
+                                          border: 1px solid #007bff;">
+                                   Таблица №<?php echo $t; ?>
+                                </a>
+                            <?php endfor; ?>
+                        </div>
+
+                    </div>
                 <?php endif; ?>
             </div>
-
-            <!-- ФОРМА ВВОДА СМЕН -->
-            <h3>Добавить рабочую смену</h3>
-            <?php if (!empty($error)): ?><div class="error"><?php echo $error; ?></div><?php endif; ?>
-            <?php if (!empty($success_msg)): ?><div class="success"><?php echo $success_msg; ?></div><?php endif; ?>
-            
-            <form method="POST" class="form-inline" id="shiftForm">
-                <div>
-                    <label>Табельный номер</label>
-                    <input type="text" name="employee_id" id="empIdInput" placeholder="ТН-001" required>
-                </div>
-                <div>
-                    <label>ФИО сотрудника</label>
-                    <input type="text" name="employee_name" id="empNameInput" placeholder="Иванов И.И." required>
-                </div>
-                <div>
-                    <label>Ставка (руб/час)</label>
-                    <input type="number" name="hourly_rate" id="empRateInput" placeholder="500.00" step="0.01" min="0" required>
-                </div>
-                <div>
-                    <label>Заступил (Дата/Время)</label>
-                    <input type="datetime-local" name="shift_start" required>
-                </div>
-                <div>
-                    <label>Отработано (Часов)</label>
-                    <input type="number" name="worked_hours" min="0" max="100" value="0" required>
-                </div>
-                <div>
-                    <label>Отработано (Минут)</label>
-                    <input type="number" name="worked_minutes" min="0" max="59" value="0" required>
-                </div>
-                <button type="submit" name="add_shift">Записать</button>
-            </form>
         <?php endif; ?>
 
-        <!-- ПАНЕЛЬ ФИЛЬТРАЦИИ И СКАЧИВАНИЯ -->
+        <?php if(!empty($success_msg)): ?>
+            <div class="success"><?php echo $success_msg; ?></div>
+        <?php endif; ?>
+        <?php if(!empty($error) && isset($_POST['add_shift'])): ?>
+            <div class="error"><?php echo $error; ?></div>
+        <?php endif; ?>
+
+        <!-- ФОРМА ДОБАВЛЕНИЯ СМЕНЫ -->
+        <form action="index.php?object=<?php echo $currentObject; ?>&table=<?php echo $currentSubTable; ?>" method="POST" class="form-inline">
+            <div>
+                <label>ID сотрудника</label>
+                <input type="text" name="employee_id" required>
+            </div>
+            <div>
+                <label>ФИО сотрудника</label>
+                <input type="text" name="employee_name" required>
+            </div>
+            <div>
+                <label>Ставка (руб/час)</label>
+                <input type="number" step="0.01" name="hourly_rate" required>
+            </div>
+            <div>
+                <label>Начало смены</label>
+                <input type="datetime-local" name="shift_start" required>
+            </div>
+            <div>
+                <label>Отработано часов</label>
+                <input type="number" name="worked_hours" min="0" value="0" required>
+            </div>
+            <div>
+                <label>минут</label>
+                <input type="number" name="worked_minutes" min="0" max="59" value="0" required>
+            </div>
+            <button type="submit" name="add_shift">Сохранить</button>
+        </form>
+
+        <!-- ПАНЕЛЬ ФИЛЬТРАЦИИ МЕСЯЦЕВ -->
         <div class="filter-panel">
             <form method="GET" action="index.php">
-                <label style="font-size: 14px; font-weight: bold;">Период отчета:</label>
+                <input type="hidden" name="object" value="<?php echo $currentObject; ?>">
+                <input type="hidden" name="table" value="<?php echo $currentSubTable; ?>">
+                <label style="margin-right: 10px;">Период:</label>
                 <select name="month" onchange="this.form.submit()">
                     <?php foreach ($months_list as $m): ?>
-                        <option value="<?php echo $m; ?>" <?php echo ($m === $selected_month) ? 'selected' : ''; ?>>
+                        <option value="<?php echo $m; ?>" <?php echo $m === $selected_month ? 'selected' : ''; ?>>
                             <?php echo date('m.Y', strtotime($m . '-01')); ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
             </form>
-            
-            <!-- Ссылка на скрипт генерации Excel с передачей выбранного месяца -->
-            <a href="export_excel.php?month=<?php echo $selected_month; ?>" class="btn-excel">📊 Скачать в Excel</a>
         </div>
 
-        <!-- СВОДНЫЙ ТАБЕЛЬ -->
+        <!-- СВОДНАЯ ТАБЛИЦА -->
         <table class="work-table">
             <thead>
                 <tr>
-                    <th>Табельный номер</th>
-                    <th>ФИО сотрудника</th>
-                    <th>Ставка (руб/час)</th>
-                    <th>Календарные дни и часы</th>
-                    <th>Итого часов</th>
-                    <th>Сумма заработка</th>
+                    <th>ID</th>
+                    <th>Сотрудник</th>
+                    <th>Ставка</th>
+                    <th>Детализация по дням</th>
+                    <th>Всего часов</th>
+                    <th>Зарплата</th>
                 </tr>
             </thead>
             <tbody>
-                <?php if (!empty($work_data)): ?>
-                    <?php foreach ($work_data as $row): ?>
+                <?php if(empty($work_data)): ?>
+                    <tr><td colspan="6">Нет данных за выбранный период</td></tr>
+                <?php else: ?>
+                    <?php foreach($work_data as $row): ?>
                         <tr>
                             <td><?php echo htmlspecialchars($row['employee_id']); ?></td>
                             <td><?php echo htmlspecialchars($row['employee_name']); ?></td>
                             <td><?php echo number_format($row['current_rate'], 2, '.', ' '); ?> руб.</td>
                             <td><?php echo $row['days_detail']; ?></td>
-                            <td class="total-cell"><?php echo $row['total_hours_text']; ?></td>
-                            <td class="money-cell"><?php echo number_format($row['total_salary'], 2, '.', ' '); ?> руб.</td>
+                            <td><?php echo $row['total_hours_text']; ?></td>
+                            <td style="font-weight:bold; color:#28a745;"><?php echo number_format($row['total_salary'], 2, '.', ' '); ?> руб.</td>
                         </tr>
                     <?php endforeach; ?>
-                <?php else: ?>
-                    <tr><td colspan="6" style="text-align: center; color: #aaa;">За выбранный период данные отсутствуют.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
     </div>
-
-    <!-- Скрипт автозаполнения -->
-    <script>
-    const employeeArchive = <?php echo json_encode($rates_archive); ?>;
-    const idInput = document.getElementById('empIdInput');
-    const nameInput = document.getElementById('empNameInput');
-    const rateInput = document.getElementById('empRateInput');
-
-    if (idInput) {
-        idInput.addEventListener('input', function() {
-            const enteredId = this.value.trim();
-            if (employeeArchive[enteredId]) {
-                nameInput.value = employeeArchive[enteredId]['name'];
-                rateInput.value = employeeArchive[enteredId]['rate'];
-            }
-        });
-    }
-    </script>
 <?php endif; ?>
 
 </body>
