@@ -3,10 +3,17 @@ session_start();
 require_once 'db.php';
 
 // Защита страницы: если пользователь не админ, перенаправляем его на главную
-if (!isset($_SESSION['authorized']) || !isset($_SESSION['is_admin']) || $_SESSION['is_admin'] != 1) {
+// if (!isset($_SESSION['authorized']) || !isset($_SESSION['is_admin']) || $_SESSION['is_admin'] != 1) {
+//     header("Location: index.php");
+//     exit;
+// }
+
+// Защита страницы: пускаем ТОЛЬКО Супер-администратора (уровень 2)
+if (!isset($_SESSION['authorized']) || !isset($_SESSION['is_admin']) || $_SESSION['is_admin'] < 2) {
     header("Location: index.php");
     exit;
 }
+
 
 $message = '';
 
