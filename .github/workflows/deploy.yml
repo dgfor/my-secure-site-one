@@ -1,0 +1,25 @@
+name: Deploy Website
+
+on:
+  push:
+    branches:
+      - main # Скрипт будет срабатывать только при пуше в ветку main
+
+jobs:
+  web-deploy:
+    name: Deploy to KeyHelp
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get latest code
+        uses: actions/checkout@v4
+
+      - name: Sync files to Hosting
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          # Исключаем служебные файлы Git, чтобы они не летели на хостинг
+          exclude: |
+            **/.git*
+            **/.git*/**
