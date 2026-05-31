@@ -2,8 +2,10 @@ name: Deploy Website
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*" #Скрипт запуститься только если pushить тег начинающийся с буквы "v" (v2.0.0-beta)
+    # branches:
+    #   - main   #скрипт запускается при каждом push
 
 jobs:
   web-deploy:
