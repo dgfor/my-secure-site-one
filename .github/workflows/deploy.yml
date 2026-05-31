@@ -3,7 +3,7 @@ name: Deploy Website
 on:
   push:
     branches:
-      - main # Скрипт будет срабатывать только при пуше в ветку main
+      - main
 
 jobs:
   web-deploy:
@@ -19,7 +19,8 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          # Исключаем служебные файлы Git, чтобы они не летели на хостинг
+          secure: true # <-- ТЕПЕРЬ ПОДКЛЮЧЕНИЕ БУДЕТ ЗАЩИЩЕННЫМ (FTPS)
+          server-dir: www/имя_вашего_сайта.ru/ # <-- Укажите папку вашего сайта из KeyHelp
           exclude: |
             **/.git*
             **/.git*/**
