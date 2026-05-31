@@ -19,7 +19,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          secure: true # <-- ТЕПЕРЬ ПОДКЛЮЧЕНИЕ БУДЕТ ЗАЩИЩЕННЫМ (FTPS)
+          secure-implicit: true # <-- ТЕПЕРЬ ПОДКЛЮЧЕНИЕ БУДЕТ ЗАЩИЩЕННЫМ (FTPS)
           server-dir: www/dgmar_ftp.ru/ # <-- Укажите папку вашего сайта из KeyHelp
           exclude: |
             **/.git*
